@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbit Defender</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2a 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .game-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            height: 80vh;
+        }
+
+        canvas {
+            border: 2px solid rgba(100, 200, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(10, 15, 30, 0.8);
+            box-shadow: 0 0 30px rgba(100, 200, 255, 0.1);
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            gap: 30px;
+            z-index: 10;
+        }
+
+        .score, .level {
+            font-size: 18px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        .score span, .level span {
+            color: #64c8ff;
+            font-weight: 600;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            z-index: 20;
+        }
+
+        .title {
+            font-size: 2.5em;
+            font-weight: 300;
+            margin-bottom: 20px;
+            color: #64c8ff;
+            letter-spacing: 2px;
+        }
+
+        .instructions {
+            margin: 20px 0;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #64c8ff, #3a7bd5);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(100, 200, 255, 0.3);
+        }
+
+        .game-over {
+            display: none;
+        }
+
+        .final-score {
+            font-size: 1.5em;
+            margin: 20px 0;
+            color: #64c8ff;
+        }
+
+        @media (max-width: 768px) {
+            .game-container {
+                height: 70vh;
+            }
+            
+            .hud {
+                padding: 10px 20px;
+                gap: 20px;
+            }
+            
+            .score, .level {
+                font-size: 16px;
+            }
+            
+            .title {
+                font-size: 2em;
+            }
+            
+            .btn {
+                padding: 10px 25px;
+                font-size: 14px;
+            }
+
+            .controls {
+                font-size: 12px;
+                bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div class="hud">
+            <div class="score">SCORE: <span id="score">0</span></div>
+            <div class="level">LEVEL: <span id="level">1</span></div>
+        </div>
+        
+        <div class="controls">
+            Move mouse to aim • Click to fire • Avoid asteroids
+        </div>
+        
+        <div class="menu" id="startMenu">
+            <h1 class="title">ORBIT DEFENDER</h1>
+            <p class="instructions">
+                Protect the central station from incoming asteroids.<br>
+                Rotate your turret and shoot to destroy them.<br>
+                Each level increases the difficulty.
+            </p>
+            <button class="btn" id="startBtn">START MISSION</button>
+        </div>
+        
+        <div class="menu game-over" id="gameOverMenu">
+            <h1 class="title">MISSION FAILED</h1>
+            <div class="final-score">Final Score: <span id="finalScore">0</span></div>
+            <button class="btn" id="restartBtn">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        // Game constants and variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const levelDisplay = document.getElementById('level');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const startMenu = document.getElementById('startMenu');
+        const gameOverMenu = document.getElementById('gameOverMenu');
+        
+        // Game state - EASIER SETTINGS
+        let game = {
+            running: false,
+            score: 0,
+            level: 1,
+            centerX: 0,
+            centerY: 0,
+            orbitRadius: 0,
+            player: {
+                angle: 0,
+                radius: 25, // Larger player hitbox
+                rotationSpeed: 0.05,
+                cooldown: 0,
+                cooldownTime: 8 // Faster shooting
+            },
+            asteroids: [],
+            projectiles: [],
+            particles: [],
+            spawnRate: 45, // Slower spawn rate
+            difficultyIncrease: 0.8 // Slower difficulty progression
+        };
+
+        // Initialize canvas size
+        function initCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            
+            game.centerX = canvas.width / 2;
+            game.centerY = canvas.height / 2;
+            game.orbitRadius = Math.min(canvas.width, canvas.height) * 0.3;
+        }
+
+        // Initialize game
+        function initGame() {
+            game.running = true;
+            game.score = 0;
+            game.level = 1;
+            game.asteroids = [];
+            game.projectiles = [];
+            game.particles = [];
+            game.spawnRate = 45;
+            game.difficultyIncrease = 0.8;
+            
+            scoreDisplay.textContent = '0';
+            levelDisplay.textContent = '1';
+            
+            startMenu.style.display = 'none';
+            gameOverMenu.style.display = 'none';
+        }
+
+        // Create a new asteroid - EASIER SETTINGS
+        function createAsteroid() {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.max(canvas.width, canvas.height) * 0.8;
+            const speed = 0.8 + (game.level * 0.15); // Slower asteroids
+            const size = Math.random() * 15 + 10; // Smaller asteroids
+            
+            const asteroid = {
+                x: game.centerX + Math.cos(angle) * distance,
+                y: game.centerY + Math.sin(angle) * distance,
+                size: size,
+                speed: speed,
+                angle: Math.atan2(game.centerY - (game.centerY + Math.sin(angle) * distance), 
+                                 game.centerX - (game.centerX + Math.cos(angle) * distance)),
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.1
+            };
+            
+            game.asteroids.push(asteroid);
+        }
+
+        // Create projectile from player - EASIER SETTINGS
+        function createProjectile() {
+            if (game.player.cooldown > 0) return;
+            
+            const projectile = {
+                x: game.centerX + Math.cos(game.player.angle) * game.orbitRadius,
+                y: game.centerY + Math.sin(game.player.angle) * game.orbitRadius,
+                angle: game.player.angle,
+                speed: 10, // Faster projectiles
+                radius: 5, // Larger projectiles
+                life: 120 // Longer range
+            };
+            
+            game.projectiles.push(projectile);
+            game.player.cooldown = game.player.cooldownTime;
+        }
+
+        // Create explosion particles
+        function createExplosion(x, y, color, count = 10) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 3 + 1;
+                
+                const particle = {
+                    x: x,
+                    y: y,
+                    speedX: Math.cos(angle) * speed,
+                    speedY: Math.sin(angle) * speed,
+                    radius: Math.random() * 3 + 1,
+                    color: color,
+                    life: Math.random() * 30 + 20
+                };
+                
+                game.particles.push(particle);
+            }
+        }
+
+        // Update game state - EASIER SETTINGS
+        function update() {
+            if (!game.running) return;
+
+            // Update player cooldown
+            if (game.player.cooldown > 0) {
+                game.player.cooldown--;
+            }
+
+            // Spawn asteroids - slower rate
+            if (Math.random() < game.spawnRate / 90) {
+                createAsteroid();
+            }
+
+            // Update asteroids
+            game.asteroids.forEach((asteroid, index) => {
+                asteroid.x += Math.cos(asteroid.angle) * asteroid.speed;
+                asteroid.y += Math.sin(asteroid.angle) * asteroid.speed;
+                asteroid.rotation += asteroid.rotationSpeed;
+
+                // Check collision with center - larger safe zone
+                const distToCenter = Math.sqrt(
+                    Math.pow(asteroid.x - game.centerX, 2) + 
+                    Math.pow(asteroid.y - game.centerY, 2)
+                );
+
+                if (distToCenter < 70) { // Larger safe zone
+                    gameOver();
+                    return;
+                }
+
+                // Remove asteroids that go off screen
+                if (asteroid.x < -100 || asteroid.x > canvas.width + 100 ||
+                    asteroid.y < -100 || asteroid.y > canvas.height + 100) {
+                    game.asteroids.splice(index, 1);
+                }
+            });
+
+            // Update projectiles
+            game.projectiles.forEach((projectile, pIndex) => {
+                projectile.x += Math.cos(projectile.angle) * projectile.speed;
+                projectile.y += Math.sin(projectile.angle) * projectile.speed;
+                projectile.life--;
+
+                // Check collision with asteroids - more forgiving hit detection
+                game.asteroids.forEach((asteroid, aIndex) => {
+                    const dist = Math.sqrt(
+                        Math.pow(projectile.x - asteroid.x, 2) + 
+                        Math.pow(projectile.y - asteroid.y, 2)
+                    );
+
+                    if (dist < asteroid.size + projectile.radius + 5) { // Larger hit radius
+                        // Hit asteroid
+                        game.score += Math.floor(asteroid.size * 1.5); // More points
+                        scoreDisplay.textContent = game.score;
+                        
+                        createExplosion(asteroid.x, asteroid.y, '#64c8ff', 15);
+                        
+                        game.asteroids.splice(aIndex, 1);
+                        game.projectiles.splice(pIndex, 1);
+                        
+                        // Level up check - slower progression
+                        if (game.score >= game.level * 800) {
+                            game.level++;
+                            levelDisplay.textContent = game.level;
+                            game.spawnRate += 3; // Slower difficulty increase
+                        }
+                    }
+                });
+
+                // Remove old projectiles
+                if (projectile.life <= 0) {
+                    game.projectiles.splice(pIndex, 1);
+                }
+            });
+
+            // Update particles
+            game.particles.forEach((particle, index) => {
+                particle.x += particle.speedX;
+                particle.y += particle.speedY;
+                particle.life--;
+
+                if (particle.life <= 0) {
+                    game.particles.splice(index, 1);
+                }
+            });
+        }
+
+        // Render game
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = 'rgba(10, 15, 30, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw starfield background
+            ctx.fillStyle = '#ffffff';
+            for (let i = 0; i < 50; i++) {
+                const x = (i * 79 + Date.now() / 50) % canvas.width;
+                const y = (i * 53 + Date.now() / 60) % canvas.height;
+                const size = Math.sin(Date.now() / 1000 + i) * 0.5 + 0.5;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw central station with larger safe zone indicator
+            ctx.fillStyle = '#3a7bd5';
+            ctx.beginPath();
+            ctx.arc(game.centerX, game.centerY, 40, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw safe zone indicator
+            ctx.strokeStyle = 'rgba(255, 100, 100, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(game.centerX, game.centerY, 70, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw orbit ring
+            ctx.strokeStyle = 'rgba(100, 200, 255, 0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(game.centerX, game.centerY, game.orbitRadius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw player turret
+            const playerX = game.centerX + Math.cos(game.player.angle) * game.orbitRadius;
+            const playerY = game.centerY + Math.sin(game.player.angle) * game.orbitRadius;
+            
+            ctx.fillStyle = '#64c8ff';
+            ctx.beginPath();
+            ctx.arc(playerX, playerY, game.player.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw turret barrel
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(playerX, playerY);
+            ctx.lineTo(
+                playerX + Math.cos(game.player.angle) * 30, // Longer barrel
+                playerY + Math.sin(game.player.angle) * 30
+            );
+            ctx.stroke();
+
+            // Draw asteroids
+            game.asteroids.forEach(asteroid => {
+                ctx.save();
+                ctx.translate(asteroid.x, asteroid.y);
+                ctx.rotate(asteroid.rotation);
+                
+                ctx.fillStyle = '#888888';
+                ctx.beginPath();
+                ctx.arc(0, 0, asteroid.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add asteroid details
+                ctx.fillStyle = '#666666';
+                ctx.beginPath();
+                ctx.arc(asteroid.size * 0.3, -asteroid.size * 0.2, asteroid.size * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            });
+
+            // Draw projectiles with better visibility
+            game.projectiles.forEach(projectile => {
+                ctx.fillStyle = '#64c8ff';
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add glow effect
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#64c8ff';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+
+            // Draw particles
+            game.particles.forEach(particle => {
+                ctx.globalAlpha = particle.life / 50;
+                ctx.fillStyle = particle.color;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            });
+
+            // Draw cooldown indicator
+            if (game.player.cooldown > 0) {
+                const cooldownPercent = 1 - (game.player.cooldown / game.player.cooldownTime);
+                ctx.fillStyle = 'rgba(100, 200, 255, 0.5)';
+                ctx.beginPath();
+                ctx.arc(playerX, playerY, game.player.radius + 5, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * cooldownPercent));
+                ctx.lineTo(playerX, playerY);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            render();
+            if (game.running) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Game over
+        function gameOver() {
+            game.running = false;
+            finalScoreDisplay.textContent = game.score;
+            gameOverMenu.style.display = 'block';
+            createExplosion(game.centerX, game.centerY, '#ff6b6b', 30);
+        }
+
+        // Handle mouse movement for aiming
+        function handleMouseMove(e) {
+            if (!game.running) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            game.player.angle = Math.atan2(mouseY - game.centerY, mouseX - game.centerX);
+        }
+
+        // Handle touch movement for mobile
+        function handleTouchMove(e) {
+            if (!game.running) return;
+            e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const touchX = touch.clientX - rect.left;
+            const touchY = touch.clientY - rect.top;
+            
+            game.player.angle = Math.atan2(touchY - game.centerY, touchX - game.centerX);
+        }
+
+        // Event listeners
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('click', () => createProjectile());
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            createProjectile();
+        });
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            initGame();
+            gameLoop();
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            initGame();
+            gameLoop();
+        });
+
+        // Initialize
+        window.addEventListener('resize', () => {
+            initCanvas();
+            if (game.running) {
+                // Re-center game elements after resize
+                game.centerX = canvas.width / 2;
+                game.centerY = canvas.height / 2;
+                game.orbitRadius = Math.min(c, canvas, canvas.height) * 0.3;
+            }
+        });
+
+        initCanvas();
+    </script>
+</body>
+</html>
